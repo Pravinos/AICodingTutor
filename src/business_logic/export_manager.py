@@ -27,14 +27,15 @@ class ExportManager:
         self.reportlab_available = REPORTLAB_AVAILABLE
     
     def export_to_pdf(self, chat_history: List[Dict[str, Any]], 
-                      language: str, model: str) -> bytes:
+                      language: str, model: str, content_type: str = "chat") -> bytes:
         """
-        Export chat history to PDF
+        Export content to PDF with format based on content type
         
         Args:
             chat_history: List of chat messages
             language: Programming language used
             model: AI model used
+            content_type: Type of content ("chat" or "explanation")
             
         Returns:
             PDF data as bytes
@@ -99,48 +100,99 @@ class ExportManager:
             textColor=HexColor('#999999'), alignment=1, spaceBefore=6, spaceAfter=6
         )
         
+        # Content-specific styles
+        explanation_title_style = ParagraphStyle(
+            'ExplanationTitle', parent=styles['Heading2'], fontSize=14,
+            textColor=HexColor('#1B5E20'), spaceBefore=15, spaceAfter=10
+        )
+        explanation_body_style = ParagraphStyle(
+            'ExplanationBody', parent=styles['Normal'], fontSize=11, leading=15,
+            spaceAfter=10, leftIndent=0, rightIndent=0
+        )
+        
         # Build PDF content
         story = []
         
-        # Title and metadata
-        story.append(Paragraph("Interactive Coding Tutor", title_style))
-        story.append(Paragraph("Chat History Export", subtitle_style))
-        metadata = (
-            f"<b>Exported:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-            f"<b>Language:</b> {language} | <b>Model:</b> {model} | "
-            f"<b>Messages:</b> {len(chat_history)}"
-        )
-        story.append(Paragraph(metadata, meta_style))
-        story.append(Spacer(1, 10))
-        
-        # Chat messages
-        for i, message in enumerate(chat_history):
-            role = message.get("role", "unknown")
-            raw = message.get("content", "")
-            blocks = self._parse_markdown_like(raw)
+        if content_type == "explanation":
+            # Format for concept explanation
+            story.append(Paragraph("Interactive Coding Tutor", title_style))
+            story.append(Paragraph("Concept Explanation", subtitle_style))
+            metadata = (
+                f"<b>Exported:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+                f"<b>Language:</b> {language} | <b>Model:</b> {model}"
+            )
+            story.append(Paragraph(metadata, meta_style))
+            story.append(Spacer(1, 15))
+            
+            # For explanations, format more like a document
+            if len(chat_history) >= 2:
+                # Extract the concept from user question
+                user_content = chat_history[0].get("content", "")
+                explanation_content = chat_history[1].get("content", "")
+                
+                # Add concept title
+                concept_title = user_content.replace("Please explain this concept in", "").strip()
+                if concept_title:
+                    story.append(Paragraph(f"📖 {concept_title.title()}", explanation_title_style))
+                    story.append(Spacer(1, 10))
+                
+                # Parse and add explanation content
+                blocks = self._parse_markdown_like(explanation_content)
+                ol_index = 1
+                for btype, value in blocks:
+                    if btype == 'p':
+                        story.append(Paragraph(value, explanation_body_style))
+                    elif btype == 'list':
+                        for item in value:
+                            story.append(Paragraph(f"• {item}", list_item_style))
+                    elif btype == 'olist':
+                        for item in value:
+                            story.append(Paragraph(f"{ol_index}. {item}", list_item_style))
+                            ol_index += 1
+                    elif btype == 'code':
+                        story.append(Preformatted(value, code_block_style))
+                    elif btype == 'hr':
+                        story.append(Paragraph("—" * 30, separator_style))
+        else:
+            # Format for chat history
+            story.append(Paragraph("Interactive Coding Tutor", title_style))
+            story.append(Paragraph("Chat History Export", subtitle_style))
+            metadata = (
+                f"<b>Exported:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+                f"<b>Language:</b> {language} | <b>Model:</b> {model} | "
+                f"<b>Messages:</b> {len(chat_history)}"
+            )
+            story.append(Paragraph(metadata, meta_style))
+            story.append(Spacer(1, 10))
+            
+            # Chat messages
+            for i, message in enumerate(chat_history):
+                role = message.get("role", "unknown")
+                raw = message.get("content", "")
+                blocks = self._parse_markdown_like(raw)
 
-            role_para_style = role_user_style if role == 'user' else role_tutor_style
-            role_label = 'YOU' if role == 'user' else 'TUTOR'
-            story.append(Paragraph(role_label, role_para_style))
+                role_para_style = role_user_style if role == 'user' else role_tutor_style
+                role_label = 'YOU' if role == 'user' else 'TUTOR'
+                story.append(Paragraph(role_label, role_para_style))
 
-            ol_index = 1
-            for btype, value in blocks:
-                if btype == 'p':
-                    story.append(Paragraph(value, body_style))
-                elif btype == 'list':
-                    for item in value:
-                        story.append(Paragraph(f"• {item}", list_item_style))
-                elif btype == 'olist':
-                    for item in value:
-                        story.append(Paragraph(f"{ol_index}. {item}", list_item_style))
-                        ol_index += 1
-                elif btype == 'code':
-                    story.append(Preformatted(value, code_block_style))
-                elif btype == 'hr':
-                    story.append(Paragraph("—" * 20, separator_style))
+                ol_index = 1
+                for btype, value in blocks:
+                    if btype == 'p':
+                        story.append(Paragraph(value, body_style))
+                    elif btype == 'list':
+                        for item in value:
+                            story.append(Paragraph(f"• {item}", list_item_style))
+                    elif btype == 'olist':
+                        for item in value:
+                            story.append(Paragraph(f"{ol_index}. {item}", list_item_style))
+                            ol_index += 1
+                    elif btype == 'code':
+                        story.append(Preformatted(value, code_block_style))
+                    elif btype == 'hr':
+                        story.append(Paragraph("—" * 20, separator_style))
 
-            if i < len(chat_history) - 1:
-                story.append(Paragraph("", separator_style))
+                if i < len(chat_history) - 1:
+                    story.append(Paragraph("", separator_style))
         
         # Build PDF
         doc.build(story)

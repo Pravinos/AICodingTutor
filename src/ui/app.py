@@ -498,7 +498,7 @@ def _export_chat_history():
         return
     
     try:
-        pdf_data = export_manager.export_to_pdf(chat_history, language, model)
+        pdf_data = export_manager.export_to_pdf(chat_history, language, model, content_type="chat")
         filename_pdf = export_manager.get_export_filename('pdf')
         
         st.download_button(
@@ -670,17 +670,72 @@ def _generate_explanation(selected_topic: str) -> None:
 
 
 def _display_explanation():
-    """Show current explanation and clear control if present."""
+    """Show current explanation with export and clear controls if present."""
     if st.session_state.get('current_explanation'):
         st.markdown("---")
         st.markdown("<h3 style='text-align: center;'>Current Explanation:</h3>", unsafe_allow_html=True)
         st.markdown(st.session_state.current_explanation)
         
-        col1_clear, col2_clear, col3_clear = st.columns([1, 1, 1])
-        with col2_clear:
-            if st.button("🗑️ Clear Explanation", use_container_width=True, type="secondary"):
-                st.session_state.current_explanation = None
-                st.rerun()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            export_button = st.button("📄 Export PDF", use_container_width=True, type="secondary")
+        
+        with col2:
+            clear_button = st.button("🗑️ Clear Explanation", use_container_width=True, type="secondary")
+        
+        if export_button:
+            _export_explanation_to_pdf()
+        
+        if clear_button:
+            st.session_state.current_explanation = None
+            st.rerun()
+
+
+def _export_explanation_to_pdf():
+    """Export current explanation to PDF using the export manager."""
+    if not st.session_state.get('current_explanation'):
+        st.warning("No explanation to export!")
+        return
+    
+    try:
+        export_manager = st.session_state.export_manager
+        language = get_supported_languages()[st.session_state.selected_language]
+        model = st.session_state.selected_model
+        
+        # Create a mock chat history format for the explanation
+        explanation_history = [
+            {
+                "role": "user",
+                "content": f"Please explain this concept in {language}",
+                "timestamp": datetime.now().isoformat()
+            },
+            {
+                "role": "assistant", 
+                "content": st.session_state.current_explanation,
+                "timestamp": datetime.now().isoformat()
+            }
+        ]
+        
+        pdf_data = export_manager.export_to_pdf(explanation_history, language, model, content_type="explanation")
+        
+        # Create custom filename for explanation export
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename_pdf = f"coding_tutor_explanation_{timestamp}.pdf"
+        
+        st.download_button(
+            label="📚 Download PDF",
+            data=pdf_data,
+            file_name=filename_pdf,
+            mime="application/pdf",
+            use_container_width=True,
+            type="secondary"
+        )
+    except ImportError:
+        st.error("📚 PDF export requires reportlab library")
+        st.code("pip install reportlab")
+    except Exception as e:
+        st.error(f"PDF export failed: {str(e)}")
 
 
 def render_concept_explainer():
@@ -881,6 +936,7 @@ def _apply_custom_css():
             min-height: 70px !important;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
             border: none !important;
+            width: calc(100% - 10px) !important;
         }
         
         div[data-testid="stButton"] > button:hover {
@@ -936,6 +992,21 @@ def _apply_custom_css():
         section[data-testid="stSidebar"] .element-container:first-child h1 {
             margin-top: 0 !important;
             padding-top: 0 !important;
+        }
+        
+        /* Ensure selectbox and button alignment in concept/practice tabs */
+        div[data-testid="stSelectbox"] > div > div {
+            width: 100% !important;
+        }
+        
+        /* Force exact alignment between selectbox and buttons */
+        div[data-testid="stSelectbox"] {
+            margin: 5px !important;
+        }
+        
+        div[data-testid="stSelectbox"] > div {
+            margin: 0 !important;
+            padding: 0 !important;
         }
         
         /* Dark mode adjustments */
