@@ -1,0 +1,40 @@
+# Configuration for Interactive Coding Tutor
+
+# LM Studio Configuration
+llm_endpoint: "http://localhost:1234"
+default_model: "phi-3-mini"
+
+# Supported Programming Languages
+supported_languages:
+  - "python"
+  - "javascript"
+  - "java"
+  - "cpp"
+  - "csharp"
+
+# Language Display Names
+language_display_names:
+  python: "Python"
+  javascript: "JavaScript"
+  java: "Java"
+  cpp: "C++"
+  csharp: "C#"
+
+# LLM Generation Settings
+generation_settings:
+  max_tokens: 2000
+  temperature: 0.5
+  timeout: 60
+
+# UI Settings
+ui_settings:
+  page_title: "Interactive Coding Tutor"
+  page_icon: "🎓"
+  layout: "wide"
+  chat_history_limit: 50
+  
+# Application Settings
+app_settings:
+  log_level: "INFO"
+  cache_ttl: 60  # seconds
+  connection_check_interval: 30  # seconds
