@@ -27,3 +27,7 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Data directory - contains user chat history and personal data
+data/
+*.json
