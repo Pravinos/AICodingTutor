@@ -5,7 +5,7 @@ A local AI-powered coding tutor that helps beginners learn programming fundament
 ## ✨ What This App Offers
 
 ### 🤖 **Intelligent Tutoring**
-- **Chat Interface**: Ask programming questions in natural language and get personalized explanations
+- **Chat Interface**: Ask programming questions in natural language and get personalized explanations with persistent chat history
 - **Concept Explanations**: Get detailed explanations of programming concepts with examples
 - **Practice Exercises**: Generate coding challenges and receive AI-powered feedback on your solutions
 
@@ -62,6 +62,8 @@ The app will open in your browser at http://localhost:8501
   - "How do variables work in Python?"
   - "What's the difference between lists and arrays?"
   - "Can you help me understand loops?"
+- Access previous chat sessions from the sidebar
+- Export chat history as PDF for reference
 
 ### **📖 Learn Concepts Tab**  
 - Choose a programming concept from the dropdown
