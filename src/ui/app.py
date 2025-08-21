@@ -252,6 +252,9 @@ def load_chat_session(session_id: str):
     st.session_state.current_exercise = None
     st.session_state.current_explanation = None
     
+    # Automatically switch to chat tab when loading a session
+    st.session_state.active_tab = "💬 Chat"
+    
     save_chat_history()
 
 
@@ -394,7 +397,7 @@ def _render_model_selection(endpoint: str, config: Dict[str, Any]) -> bool:
         "Choose a model:",
         available_models,
         index=model_index,
-        help="Select the AI model to use for tutoring"
+        help="Select the AI model to use for tutoring. Keep in mind that depending on your system's capabilities, some models may perform better than others. Responses usually take 20-40 seconds to generate."
     )
     
     if (old_model != st.session_state.selected_model and 
@@ -515,32 +518,17 @@ def _export_chat_history():
     except Exception as e:
         st.error(f"PDF export failed: {str(e)}")
 def _render_sidebar_buttons():
-    """Render clear / reload actions for chat management."""
+    """Render clear all action for chat management."""
     st.markdown("---")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ Clear Current", use_container_width=True, type="secondary", help="Clear current chat only"):
-            # Clear current chat but keep it in sessions if it has messages
-            if st.session_state.chat_history and st.session_state.current_session_id:
-                save_chat_history()
-            
-            st.session_state.chat_history = []
-            st.session_state.current_exercise = None
-            st.session_state.current_explanation = None
-            st.session_state.current_session_id = None
-            save_chat_history()
-            st.rerun()
-    
-    with col2:
-        if st.button("🗑️ Clear All", use_container_width=True, type="secondary", help="Clear all chat history"):
-            st.session_state.chat_history = []
-            st.session_state.chat_sessions = []
-            st.session_state.current_exercise = None
-            st.session_state.current_explanation = None
-            st.session_state.current_session_id = None
-            clear_chat_history_file()
-            st.rerun()
+    if st.button("🗑️ Clear All", use_container_width=True, type="secondary", help="Clear all chat history"):
+        st.session_state.chat_history = []
+        st.session_state.chat_sessions = []
+        st.session_state.current_exercise = None
+        st.session_state.current_explanation = None
+        st.session_state.current_session_id = None
+        clear_chat_history_file()
+        st.rerun()
 def handle_chat_input(user_input: str, config: Dict[str, Any]) -> str:
     """Send user input to model pipeline and return assistant reply."""
     try:
@@ -597,6 +585,8 @@ def _process_user_message(user_input: str):
                 st.session_state.chat_history.append(assistant_msg)
                 
                 save_chat_history()
+            except Exception as e:
+                st.error(f"Error generating response: {str(e)}")
             finally:
                 st.session_state.is_loading = False
 
@@ -605,21 +595,82 @@ def render_chat_interface():
     """Chat tab UI including history display and input box."""
     language_name = get_supported_languages()[st.session_state.selected_language]
     
-    # Create centered container for title and button
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # Create centered container for title and buttons with more space
+    col1, col2, col3 = st.columns([0.7, 3, 0.7])
     with col2:
-        # Create a container with border and padding for better visual appeal
-        with st.container():
-            # Use columns for inline layout within the container
-            title_col, button_col = st.columns([3, 1])
+        # Check if there's an active conversation
+        has_active_chat = bool(st.session_state.chat_history and st.session_state.current_session_id)
+        
+        if has_active_chat:
+            # Create two separate containers: one for text (left) and one for buttons (right)
+            text_col, buttons_col = st.columns([1.8, 1])
             
-            with title_col:
-                st.markdown(f"<h2 style='margin: 0; text-align: center;'>💬 Chat with your {language_name} tutor</h2>", 
+            with text_col:
+                st.markdown(f"<h2 style='margin: 0; text-align: left;'>💬 Chat with your {language_name} tutor</h2>", 
+                            unsafe_allow_html=True)
+            
+            with buttons_col:
+                # Create a container for buttons with custom CSS to align them right with small gap
+                st.markdown("""
+                    <style>
+                    .button-container {
+                        display: flex;
+                        justify-content: flex-end;
+                        align-items: center;
+                        gap: 8px;
+                        margin-top: -5px;
+                    }
+                    .button-container > div {
+                        display: flex;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                # Use columns for the two buttons with minimal space
+                btn_col1, btn_col2 = st.columns([1, 1])
+                
+                with btn_col1:
+                    if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn", use_container_width=True):
+                        start_new_chat()
+                        st.rerun()
+                
+                with btn_col2:
+                    if st.button("🗑️ Clear Current", help="Clear current chat only", key="clear_current_btn", use_container_width=True):
+                        # Clear current chat but keep it in sessions if it has messages
+                        if st.session_state.chat_history and st.session_state.current_session_id:
+                            save_chat_history()
+                        
+                        st.session_state.chat_history = []
+                        st.session_state.current_exercise = None
+                        st.session_state.current_explanation = None
+                        st.session_state.current_session_id = None
+                        save_chat_history()
+                        st.rerun()
+        else:
+            # Simpler layout for no active chat - title left, single button right
+            text_col, button_col = st.columns([2.5, 1])
+            
+            with text_col:
+                st.markdown(f"<h2 style='margin: 0; text-align: left;'>💬 Chat with your {language_name} tutor</h2>", 
                             unsafe_allow_html=True)
             
             with button_col:
-                st.markdown("<div style='margin-top: 2px;'></div>", unsafe_allow_html=True)
-                if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn"):
+                # Add the same CSS styling for proper alignment
+                st.markdown("""
+                    <style>
+                    .single-button-container {
+                        display: flex;
+                        justify-content: flex-end;
+                        align-items: center;
+                        margin-top: -5px;
+                    }
+                    .single-button-container > div {
+                        display: flex;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn", use_container_width=True):
                     start_new_chat()
                     st.rerun()
     
@@ -750,7 +801,7 @@ def render_concept_explainer():
             "Choose a concept to learn about:",
             topics,
             format_func=lambda x: x.replace('_', ' ').title(),
-            help="Select a programming concept for detailed explanation"
+            help="Select a programming concept for detailed explanation. Responses take 20-30 seconds to generate please don't switch tabs."
         )
         
         explain_button = st.button("📚 Explain Concept", use_container_width=True, type="secondary")
@@ -866,7 +917,7 @@ def render_exercise_generator():
             "Choose a topic for practice:",
             topics,
             format_func=lambda x: x.replace('_', ' ').title(),
-            help="Select a topic to generate a practice exercise"
+            help="Select a topic to generate a practice exercise. Responses take 20-30 seconds to generate please don't switch tabs."
         )
         
         generate_button = st.button("🎯 Generate Exercise", use_container_width=True, type="secondary")
@@ -902,9 +953,6 @@ def _render_modern_tabs(tab_options, current_tab_key):
                 button_type = "primary" if is_active else "secondary"
                 button_key = f"tab_{tab['key']}"
                 
-                # Disable tab switching during loading
-                is_disabled = st.session_state.get("is_loading", False) and not is_active
-                
                 # Create button with icon and label
                 button_text = f"{tab['icon']} {tab['label'].split(' ', 1)[1] if ' ' in tab['label'] else tab['label']}"
                 
@@ -913,11 +961,10 @@ def _render_modern_tabs(tab_options, current_tab_key):
                     key=button_key,
                     type=button_type,
                     use_container_width=True,
-                    disabled=is_disabled
+                    help=f"Switch to {tab['label']}"
                 ):
-                    if not st.session_state.get("is_loading", False):
-                        st.session_state.active_tab = tab_mapping[tab["key"]]
-                        st.rerun()
+                    st.session_state.active_tab = tab_mapping[tab["key"]]
+                    st.rerun()
 
 
 def _apply_custom_css():
