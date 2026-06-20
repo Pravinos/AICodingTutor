@@ -2,6 +2,8 @@
 
 A local AI-powered coding tutor that helps beginners learn programming fundamentals. Built with Streamlit and powered by LM Studio for completely private, local AI inference.
 
+<img src="media/app.png"/>
+
 ## ✨ What This App Offers
 
 ### 🤖 **Intelligent Tutoring**
