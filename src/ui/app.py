@@ -43,8 +43,8 @@ DEFAULT_CONFIG = {
 
 # Page configuration
 st.set_page_config(
-    page_title="Interactive Coding Tutor",
-    page_icon="🎓",
+    page_title="DevTutor AI",
+    page_icon="🖥️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -67,6 +67,8 @@ def get_chat_history_file_path() -> str:
     data_dir = os.path.join(root_dir, "data")
     os.makedirs(data_dir, exist_ok=True)
     return os.path.join(data_dir, "chat_history.json")
+
+
 def save_chat_history():
     """Persist current chat history and sessions to disk."""
     try:
@@ -323,8 +325,8 @@ def initialize_session_state():
 @st.cache_data(ttl=30)
 def check_lm_studio_connection(endpoint: str, config: Dict[str, Any]) -> bool:
     """Return True if LM Studio endpoint responds within timeout."""
-    timeout = config.get("app_settings", {}).get("connection_check_interval", 5)
-    return test_connection(endpoint=endpoint, timeout=timeout)
+    timeout = config.get("generation_settings", {}).get("timeout", 10)
+    return test_connection(endpoint=endpoint, timeout=min(timeout, 10))
 
 
 @st.cache_data(ttl=60)
@@ -337,50 +339,72 @@ def get_models(endpoint: str, config: Dict[str, Any]) -> List[str]:
         return ["No models available"]
 
 
+def _sidebar_section(icon: str, title: str) -> None:
+    """Render a styled sidebar section heading using native Streamlit markup."""
+    st.subheader(f"{icon} {title}")
+
+
+def _render_sidebar_header(is_connected: bool) -> None:
+    """Brand + connection status in one block to avoid Streamlit block gaps."""
+    if is_connected:
+        status_html = """
+        <div class="dt-status connected">
+          <span class="dt-dot"></span>
+          <span class="dt-status-label">LM Studio connected</span>
+          <span class="dt-status-badge">Local · Private</span>
+        </div>
+        """
+    else:
+        status_html = """
+        <div class="dt-status offline">
+          <span class="dt-dot"></span>
+          <span class="dt-status-label">LM Studio offline</span>
+        </div>
+        <p class="dt-status-hint">Start LM Studio and load a model to continue.</p>
+        """
+
+    st.markdown(
+        f"""
+        <div class="dt-sidebar-top">
+          <div class="dt-sidebar-brand">
+            <div class="dt-sidebar-brand-row">
+              <span class="dt-sidebar-brand-icon">🖥️</span>
+              <div class="dt-sidebar-brand-text">
+                <span class="dt-sidebar-brand-title">DevTutor AI</span>
+                <span class="dt-sidebar-brand-tagline">Coding tutor for beginners</span>
+              </div>
+            </div>
+          </div>
+          {status_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_sidebar(config: Dict[str, Any]) -> bool:
     """Render sidebar; return False if mandatory resources missing."""
     with st.sidebar:
-        st.title("🚀 Your AI Coding Buddy")
-        st.markdown("---")
-        
         endpoint = config.get("llm_endpoint", "http://localhost:1234")
-        
-        # Connection status
-        if not _render_connection_status(endpoint, config):
+        is_connected = check_lm_studio_connection(endpoint, config)
+        _render_sidebar_header(is_connected)
+
+        if not is_connected:
             return False
-        
-        # Model selection
+
         if not _render_model_selection(endpoint, config):
             return False
-        
-        # Language selection
+
         _render_language_selection()
-        
-        # Chat history
         _render_chat_history_sidebar()
-        
-        # Action buttons
         _render_sidebar_buttons()
-        
-        return True
 
-
-def _render_connection_status(endpoint: str, config: Dict[str, Any]) -> bool:
-    """Show connection status; return connectivity boolean."""
-    is_connected = check_lm_studio_connection(endpoint, config)
-    
-    if is_connected:
-        st.success("✅ LM Studio Connected")
         return True
-    else:
-        st.error("❌ LM Studio Disconnected")
-        st.warning("Please start LM Studio and load a model")
-        return False
 
 
 def _render_model_selection(endpoint: str, config: Dict[str, Any]) -> bool:
     """Render model selector; persist manual change flags; return success."""
-    st.subheader("🤖 AI Model")
+    _sidebar_section("🤖", "AI Model")
     available_models = get_models(endpoint, config)
     
     if not available_models or available_models[0] == "No models available":
@@ -407,50 +431,42 @@ def _render_model_selection(endpoint: str, config: Dict[str, Any]) -> bool:
         save_chat_history()
     
     if len(available_models) < 3:
-        st.info("ℹ️ Embedding models filtered out")
+        st.caption("ℹ️ Embedding models are filtered out automatically.")
     
     return True
 
 
 def _render_language_selection():
-    """Render programming language selector and track manual changes."""
-    st.subheader("💻 Programming Language")
+    """Render programming language selector."""
+    _sidebar_section("💻", "Programming Language")
     languages = get_supported_languages()
     lang_codes = list(languages.keys())
-    
-    lang_index = 0
-    if st.session_state.selected_language in lang_codes:
-        lang_index = lang_codes.index(st.session_state.selected_language)
-    
+
     old_language = st.session_state.selected_language
     st.session_state.selected_language = st.selectbox(
         "Choose a language:",
         lang_codes,
         format_func=lambda x: languages[x],
-        index=lang_index,
-        help="Select the programming language to learn"
+        index=lang_codes.index(st.session_state.selected_language) if st.session_state.selected_language in lang_codes else 0,
+        help="Select the programming language to learn",
     )
-    
-    if (old_language != st.session_state.selected_language and 
-        old_language != "python" and
-        st.session_state.get("history_loaded", False)):
+
+    if (old_language != st.session_state.selected_language and
+            st.session_state.get("history_loaded", False)):
         st.session_state.language_manually_changed = True
         save_chat_history()
 
 
 def _render_chat_history_sidebar():
-    """Render stored sessions and export control without extra spacing."""
-    st.markdown("---")
-    st.subheader("💬 Chat History")
+    """Render stored sessions and export control."""
+    _sidebar_section("🗂️", "Recent Sessions")
 
     had_sessions = bool(st.session_state.chat_sessions)
 
     if had_sessions:
-        st.markdown("**Previous Chats:**")
-        # Show latest 5 sessions, newest first
         for idx, session in enumerate(sorted(st.session_state.chat_sessions, key=lambda x: x.get("created_at", ""), reverse=True)[:5]):
             try:
-                session_date = datetime.fromisoformat(session["created_at"]).strftime("%m/%d %H:%M")
+                session_date = datetime.fromisoformat(session["created_at"]).strftime("%b %d, %H:%M")
             except Exception:
                 session_date = "Unknown"
 
@@ -462,30 +478,30 @@ def _render_chat_history_sidebar():
                     break
             if not snippet and session.get("messages"):
                 snippet = session["messages"][0].get("content", "")
-                
+
             if snippet:
                 snippet = snippet.split("```", 1)[0]
                 snippet = " ".join(snippet.strip().split())
-                max_len = 40
+                max_len = 60
                 if len(snippet) > max_len:
                     snippet = snippet[:max_len - 3].rstrip() + "..."
-            else:
-                snippet = "(no content)"
-            label = f"💬 {session_date} - {language} - {snippet}"
+
+            label = f"{session_date} · {language}"
+            help_text = snippet or "Empty session"
             key = f"session_btn_{idx}_{session['id']}"
             is_current = session["id"] == st.session_state.current_session_id
 
             if st.button(label, key=key, use_container_width=True,
                          type="primary" if is_current else "secondary",
-                         help="Currently active session" if is_current else "Click to switch to this session"):
+                         help=help_text):
                 load_chat_session(session["id"])
                 st.rerun()
+    else:
+        st.caption("No saved sessions yet — start chatting to see them here.")
 
     if (st.session_state.chat_history and st.session_state.current_session_id and
             any(s["id"] == st.session_state.current_session_id for s in st.session_state.chat_sessions)):
-        if not had_sessions:
-            st.markdown("---")
-        st.subheader("📄 Export Current Chat")
+        _sidebar_section("📤", "Export Chat")
         _export_chat_history()
 
 
@@ -517,10 +533,12 @@ def _export_chat_history():
         st.code("pip install reportlab")
     except Exception as e:
         st.error(f"PDF export failed: {str(e)}")
+
+
 def _render_sidebar_buttons():
     """Render clear all action for chat management."""
-    st.markdown("---")
-    
+    st.markdown('<div class="dt-sidebar-divider"></div>', unsafe_allow_html=True)
+
     if st.button("🗑️ Clear All", use_container_width=True, type="secondary", help="Clear all chat history"):
         st.session_state.chat_history = []
         st.session_state.chat_sessions = []
@@ -529,6 +547,8 @@ def _render_sidebar_buttons():
         st.session_state.current_session_id = None
         clear_chat_history_file()
         st.rerun()
+
+
 def handle_chat_input(user_input: str, config: Dict[str, Any]) -> str:
     """Send user input to model pipeline and return assistant reply."""
     try:
@@ -595,95 +615,57 @@ def render_chat_interface():
     """Chat tab UI including history display and input box."""
     language_name = get_supported_languages()[st.session_state.selected_language]
     
-    # Create centered container for title and buttons with more space
-    col1, col2, col3 = st.columns([0.7, 3, 0.7])
-    with col2:
-        # Check if there's an active conversation
-        has_active_chat = bool(st.session_state.chat_history and st.session_state.current_session_id)
-        
-        if has_active_chat:
-            # Create two separate containers: one for text (left) and one for buttons (right)
-            text_col, buttons_col = st.columns([1.8, 1])
-            
-            with text_col:
-                st.markdown(f"<h2 style='margin: 0; text-align: left;'>💬 Chat with your {language_name} tutor</h2>", 
-                            unsafe_allow_html=True)
-            
-            with buttons_col:
-                # Create a container for buttons with custom CSS to align them right with small gap
-                st.markdown("""
-                    <style>
-                    .button-container {
-                        display: flex;
-                        justify-content: flex-end;
-                        align-items: center;
-                        gap: 8px;
-                        margin-top: -5px;
-                    }
-                    .button-container > div {
-                        display: flex;
-                    }
-                    </style>
-                """, unsafe_allow_html=True)
-                
-                # Use columns for the two buttons with minimal space
-                btn_col1, btn_col2 = st.columns([1, 1])
-                
-                with btn_col1:
-                    if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn", use_container_width=True):
-                        start_new_chat()
-                        st.rerun()
-                
-                with btn_col2:
-                    if st.button("🗑️ Clear Current", help="Clear current chat only", key="clear_current_btn", use_container_width=True):
-                        # Clear current chat but keep it in sessions if it has messages
-                        if st.session_state.chat_history and st.session_state.current_session_id:
-                            save_chat_history()
-                        
-                        st.session_state.chat_history = []
-                        st.session_state.current_exercise = None
-                        st.session_state.current_explanation = None
-                        st.session_state.current_session_id = None
-                        save_chat_history()
-                        st.rerun()
-        else:
-            # Simpler layout for no active chat - title left, single button right
-            text_col, button_col = st.columns([2.5, 1])
-            
-            with text_col:
-                st.markdown(f"<h2 style='margin: 0; text-align: left;'>💬 Chat with your {language_name} tutor</h2>", 
-                            unsafe_allow_html=True)
-            
-            with button_col:
-                # Add the same CSS styling for proper alignment
-                st.markdown("""
-                    <style>
-                    .single-button-container {
-                        display: flex;
-                        justify-content: flex-end;
-                        align-items: center;
-                        margin-top: -5px;
-                    }
-                    .single-button-container > div {
-                        display: flex;
-                    }
-                    </style>
-                """, unsafe_allow_html=True)
-                
-                if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn", use_container_width=True):
-                    start_new_chat()
-                    st.rerun()
+    # Simplified header with title and buttons in a clean flex row
+    has_active_chat = bool(st.session_state.chat_history and st.session_state.current_session_id)
     
-    # Add some spacing
-    st.markdown("<br>", unsafe_allow_html=True)
+    if has_active_chat:
+        # Title + two action buttons
+        title_col, btn1_col, btn2_col = st.columns([2.5, 1, 1], vertical_alignment="center")
+        
+        with title_col:
+            st.markdown(f"<h3 style='margin: 0; white-space: nowrap; font-size: 18px;'>🖥️ Chat with your {language_name} tutor</h3>", 
+                        unsafe_allow_html=True)
+        
+        with btn1_col:
+            if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn", use_container_width=True):
+                start_new_chat()
+                st.rerun()
+        
+        with btn2_col:
+            if st.button("🗑️ Clear Current", help="Clear current chat only", key="clear_current_btn", use_container_width=True):
+                # Clear current chat but keep it in sessions if it has messages
+                if st.session_state.chat_history and st.session_state.current_session_id:
+                    save_chat_history()
+                
+                st.session_state.chat_history = []
+                st.session_state.current_exercise = None
+                st.session_state.current_explanation = None
+                st.session_state.current_session_id = None
+                save_chat_history()
+                st.rerun()
+    else:
+        # Title + single new chat button
+        title_col, btn_col = st.columns([3, 1], vertical_alignment="center")
+        
+        with title_col:
+            st.markdown(f"<h3 style='margin: 0; white-space: nowrap; font-size: 18px;'>🖥️ Chat with your {language_name} tutor</h3>", 
+                        unsafe_allow_html=True)
+        
+        with btn_col:
+            if st.button("🆕 New Chat", help="Start a new conversation", key="new_chat_btn", use_container_width=True):
+                start_new_chat()
+                st.rerun()
+    
+    # Welcome banner on first load
+    _render_welcome_banner()
     
     # Display chat history
     _display_chat_history()
     
-    # Chat input
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        user_input = st.chat_input("Ask me anything about programming...")
+    # Chat input — st.chat_input already docks full-width at the bottom of the
+    # page; wrapping it in a narrow centered column (the old behavior) squeezed
+    # it to a third of the screen for no reason.
+    user_input = st.chat_input("Ask me anything about programming...")
     
     if user_input:
         if not st.session_state.current_session_id:
@@ -695,29 +677,29 @@ def render_chat_interface():
 def _generate_explanation(selected_topic: str) -> None:
     """Generate and store explanation text for a concept."""
     st.session_state.is_loading = True
-    col1_spinner, col2_spinner, col3_spinner = st.columns([1, 1, 1])
-    with col2_spinner:
-        with st.spinner("Generating..."):
-            try:
-                config = load_config()
-                endpoint = config.get("llm_endpoint", "http://localhost:1234")
-                
-                explanation = explain_concept(
-                    concept=selected_topic.replace('_', ' '),
-                    language=st.session_state.selected_language,
-                    model=st.session_state.selected_model,
-                    endpoint=endpoint,
-                    config=config
-                )
-                st.session_state.current_explanation = explanation
-                
-            except (TutorError, LMStudioError) as e:
-                st.error(f"Failed to generate explanation: {e}")
-            except Exception as e:
-                st.error(f"An unexpected error occurred: {e}")
-                logger.error(f"Unexpected error in concept explainer: {e}")
-            finally:
-                st.session_state.is_loading = False
+    with st.spinner("Generating explanation..."):
+        try:
+            config = load_config()
+            endpoint = config.get("llm_endpoint", "http://localhost:1234")
+            
+            explanation = explain_concept(
+                concept=selected_topic.replace('_', ' '),
+                language=st.session_state.selected_language,
+                model=st.session_state.selected_model,
+                endpoint=endpoint,
+                config=config
+            )
+            st.session_state.current_explanation = explanation
+            st.session_state.pop("explanation_pdf", None)
+            st.session_state.pop("explanation_pdf_filename", None)
+            
+        except (TutorError, LMStudioError) as e:
+            st.error(f"Failed to generate explanation: {e}")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+            logger.error(f"Unexpected error in concept explainer: {e}")
+        finally:
+            st.session_state.is_loading = False
 
 
 def _display_explanation():
@@ -728,60 +710,59 @@ def _display_explanation():
         st.markdown(st.session_state.current_explanation)
         
         col1, col2 = st.columns(2)
-        
+
         with col1:
-            export_button = st.button("📄 Export PDF", use_container_width=True, type="secondary")
-        
+            if st.button("📄 Export PDF", use_container_width=True, type="secondary", key="export_explanation_btn"):
+                _prepare_explanation_pdf_download()
+
         with col2:
-            clear_button = st.button("🗑️ Clear Explanation", use_container_width=True, type="secondary")
-        
-        if export_button:
-            _export_explanation_to_pdf()
-        
-        if clear_button:
-            st.session_state.current_explanation = None
-            st.rerun()
+            if st.button("🗑️ Clear Explanation", use_container_width=True, type="secondary", key="clear_explanation_btn"):
+                st.session_state.current_explanation = None
+                st.session_state.pop("explanation_pdf", None)
+                st.session_state.pop("explanation_pdf_filename", None)
+                st.rerun()
+
+        if st.session_state.get("explanation_pdf"):
+            st.download_button(
+                label="📚 Download PDF",
+                data=st.session_state.explanation_pdf,
+                file_name=st.session_state.get("explanation_pdf_filename", "explanation.pdf"),
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary",
+                key="download_explanation_pdf",
+            )
 
 
-def _export_explanation_to_pdf():
-    """Export current explanation to PDF using the export manager."""
-    if not st.session_state.get('current_explanation'):
+def _prepare_explanation_pdf_download():
+    """Build explanation PDF bytes and store them for the download button."""
+    if not st.session_state.get("current_explanation"):
         st.warning("No explanation to export!")
         return
-    
+
     try:
         export_manager = st.session_state.export_manager
         language = get_supported_languages()[st.session_state.selected_language]
         model = st.session_state.selected_model
-        
-        # Create a mock chat history format for the explanation
+
         explanation_history = [
             {
                 "role": "user",
                 "content": f"Please explain this concept in {language}",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             },
             {
-                "role": "assistant", 
+                "role": "assistant",
                 "content": st.session_state.current_explanation,
-                "timestamp": datetime.now().isoformat()
-            }
+                "timestamp": datetime.now().isoformat(),
+            },
         ]
-        
-        pdf_data = export_manager.export_to_pdf(explanation_history, language, model, content_type="explanation")
-        
-        # Create custom filename for explanation export
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename_pdf = f"coding_tutor_explanation_{timestamp}.pdf"
-        
-        st.download_button(
-            label="📚 Download PDF",
-            data=pdf_data,
-            file_name=filename_pdf,
-            mime="application/pdf",
-            use_container_width=True,
-            type="secondary"
+
+        st.session_state.explanation_pdf = export_manager.export_to_pdf(
+            explanation_history, language, model, content_type="explanation"
         )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.session_state.explanation_pdf_filename = f"coding_tutor_explanation_{timestamp}.pdf"
     except ImportError:
         st.error("📚 PDF export requires reportlab library")
         st.code("pip install reportlab")
@@ -791,11 +772,11 @@ def _export_explanation_to_pdf():
 
 def render_concept_explainer():
     """Concept explainer tab UI."""
-    st.markdown("<h2 style='text-align: center;'>📖 Concept Explainer</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>📖 Learn Concepts</h2>", unsafe_allow_html=True)
     
     topics = get_topics(st.session_state.selected_language)
     
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col2:
         selected_topic = st.selectbox(
             "Choose a concept to learn about:",
@@ -815,29 +796,27 @@ def render_concept_explainer():
 def _generate_exercise(selected_topic: str) -> None:
     """Generate and store practice exercise."""
     st.session_state.is_loading = True
-    col1_spinner, col2_spinner, col3_spinner = st.columns([1, 1, 1])
-    with col2_spinner:
-        with st.spinner("Generating..."):
-            try:
-                config = load_config()
-                endpoint = config.get("llm_endpoint", "http://localhost:1234")
-                
-                exercise = generate_exercise(
-                    topic=selected_topic,
-                    language=st.session_state.selected_language,
-                    model=st.session_state.selected_model,
-                    endpoint=endpoint,
-                    config=config
-                )
-                st.session_state.current_exercise = exercise
-                
-            except (TutorError, LMStudioError) as e:
-                st.error(f"Failed to generate exercise: {e}")
-            except Exception as e:
-                st.error(f"An unexpected error occurred: {e}")
-                logger.error(f"Unexpected error in exercise generator: {e}")
-            finally:
-                st.session_state.is_loading = False
+    with st.spinner("Generating exercise..."):
+        try:
+            config = load_config()
+            endpoint = config.get("llm_endpoint", "http://localhost:1234")
+            
+            exercise = generate_exercise(
+                topic=selected_topic,
+                language=st.session_state.selected_language,
+                model=st.session_state.selected_model,
+                endpoint=endpoint,
+                config=config
+            )
+            st.session_state.current_exercise = exercise
+            
+        except (TutorError, LMStudioError) as e:
+            st.error(f"Failed to generate exercise: {e}")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+            logger.error(f"Unexpected error in exercise generator: {e}")
+        finally:
+            st.session_state.is_loading = False
 
 
 def _evaluate_code(user_code: str) -> None:
@@ -911,7 +890,7 @@ def render_exercise_generator():
     
     topics = get_topics(st.session_state.selected_language)
     
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col2:
         selected_topic = st.selectbox(
             "Choose a topic for practice:",
@@ -928,172 +907,303 @@ def render_exercise_generator():
     _display_exercise()
 
 
-def _render_modern_tabs(tab_options, current_tab_key):
-    """Render modern clickable tab navigation that's responsive and centered."""
-    
-    # Create responsive columns that adjust based on sidebar state
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        # Create three columns for the tabs
-        tab_col1, tab_col2, tab_col3 = st.columns(3)
-        
-        tab_mapping = {
-            "chat": "💬 Chat",
-            "concepts": "📖 Learn Concepts", 
-            "practice": "🏋️ Practice"
-        }
-        
-        for i, tab in enumerate(tab_options):
-            with [tab_col1, tab_col2, tab_col3][i]:
-                # Determine if this tab is active
-                is_active = tab["key"] == current_tab_key
-                
-                # Create the button with dynamic styling
-                button_type = "primary" if is_active else "secondary"
-                button_key = f"tab_{tab['key']}"
-                
-                # Create button with icon and label
-                button_text = f"{tab['icon']} {tab['label'].split(' ', 1)[1] if ' ' in tab['label'] else tab['label']}"
-                
-                if st.button(
-                    button_text,
-                    key=button_key,
-                    type=button_type,
-                    use_container_width=True,
-                    help=f"Switch to {tab['label']}"
-                ):
-                    st.session_state.active_tab = tab_mapping[tab["key"]]
-                    st.rerun()
+def _render_modern_tabs():
+    """Render native Streamlit tabs with content inside each tab."""
+    tab1, tab2, tab3 = st.tabs(["💬 Chat", "📖 Learn Concepts", "🏋️ Practice"])
+
+    with tab1:
+        render_chat_interface()
+
+    with tab2:
+        render_concept_explainer()
+
+    with tab3:
+        render_exercise_generator()
 
 
 def _apply_custom_css():
-    """Inject modern CSS for tab navigation and responsive design."""
+    """Inject scoped CSS for DevTutor AI branding and layout.
+
+    Kept intentionally minimal: only rules that Streamlit's native theming
+    (see .streamlit/config.toml) can't express. Targets stable class names
+    rather than internal data-testid soup where possible, and avoids
+    !important except where Streamlit's own inline styles force it.
+    """
     st.markdown(
         """
         <style>
-        /* General button styling - keep normal size for most buttons */
-        div[data-testid="stButton"] > button {
-            border-radius: 15px !important;
-            padding: 15px 10px !important;
-            margin: 5px !important;
-            transition: all 0.3s ease !important;
-            font-weight: 600 !important;
-            font-size: 14px !important;
-            min-height: 70px !important;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
-            border: none !important;
-            width: calc(100% - 10px) !important;
+        :root {
+            --dt-navy: #1A3E5C;
+            --dt-navy-mid: #2E5C82;
+            --dt-sidebar-border: rgba(255, 255, 255, 0.08);
+            --dt-sidebar-muted: rgba(255, 255, 255, 0.55);
+            --dt-sidebar-block-gap: 0.5rem;
+            --dt-sidebar-control-gap: 0.15rem;
         }
-        
-        div[data-testid="stButton"] > button:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
-        }
-        
-        /* Primary buttons (active tabs) */
-        div[data-testid="stButton"] > button[kind="primary"] {
-            background: linear-gradient(135deg, #ff4b4b 0%, #d32f2f 100%) !important;
-            color: white !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 8px 25px rgba(255, 75, 75, 0.3) !important;
-        }
-        
-        div[data-testid="stButton"] > button[kind="primary"]:hover {
-            background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%) !important;
-            transform: translateY(-3px) !important;
-        }
-        
-        /* Secondary buttons (inactive tabs) */
-        div[data-testid="stButton"] > button[kind="secondary"] {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
-            color: #495057 !important;
-            border: 1px solid #dee2e6 !important;
-        }
-        
-        div[data-testid="stButton"] > button[kind="secondary"]:hover {
-            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%) !important;
-            color: #212529 !important;
-        }
-        
-        /* Responsive design for smaller screens */
-        @media (max-width: 768px) {
-            div[data-testid="stButton"] > button {
-                padding: 12px 8px !important;
-                min-height: 60px !important;
-                font-size: 12px !important;
-            }
-        }
-        
-        /* Adjust spacing for main content */
+
+        /* Tighten default page padding */
         .main .block-container {
-            padding-top: 1rem;
+            padding-top: 0.5rem;
+            padding-bottom: 5rem;
+            max-width: 1100px;
         }
-        
-        /* Reduce sidebar top padding */
-        .css-1d391kg {
-            padding-top: 1rem !important;
+
+        /* Reduce space above tab bar */
+        .main [data-testid="stTabs"] {
+            margin-top: 0;
         }
-        
-        /* Target sidebar title specifically */
-        section[data-testid="stSidebar"] .element-container:first-child h1 {
-            margin-top: 0 !important;
-            padding-top: 0 !important;
+
+        /* Buttons: consistent radius + smooth hover */
+        .stButton > button {
+            border-radius: 8px;
+            font-weight: 500;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
         }
-        
-        /* Ensure selectbox and button alignment in concept/practice tabs */
-        div[data-testid="stSelectbox"] > div > div {
-            width: 100% !important;
+        .stButton > button[kind="primary"]:hover {
+            background-color: var(--dt-navy-mid);
+            border-color: var(--dt-navy-mid);
         }
-        
-        /* Force exact alignment between selectbox and buttons */
-        div[data-testid="stSelectbox"] {
-            margin: 5px !important;
+
+        /* Chat input: pill shape */
+        .stChatInput textarea {
+            border-radius: 20px;
         }
-        
-        div[data-testid="stSelectbox"] > div {
-            margin: 0 !important;
-            padding: 0 !important;
+
+        /* ── Sidebar shell ── */
+        [data-testid="stSidebarHeader"] {
+            display: none;
+            height: 0;
+            min-height: 0;
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
         }
-        
-        /* Dark mode adjustments */
-        @media (prefers-color-scheme: dark) {
-            div[data-testid="stButton"] > button[kind="secondary"] {
-                background: linear-gradient(135deg, #343a40 0%, #495057 100%) !important;
-                color: #f8f9fa !important;
-                border: 1px solid #6c757d !important;
-            }
-            
-            div[data-testid="stButton"] > button[kind="secondary"]:hover {
-                background: linear-gradient(135deg, #495057 0%, #6c757d 100%) !important;
-                color: white !important;
-            }
+        section[data-testid="stSidebar"] > div:first-child {
+            top: 0;
         }
+        section[data-testid="stSidebar"] .block-container {
+            padding: 1.25rem 1.15rem 1.5rem;
+        }
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+            gap: var(--dt-sidebar-block-gap);
+        }
+        section[data-testid="stSidebar"] [data-testid="stMarkdown"] p {
+            margin-bottom: 0;
+        }
+        section[data-testid="stSidebar"] [data-testid="stMarkdown"]:has(.dt-sidebar-divider) {
+            margin-bottom: 0;
+        }
+
+        /* Sidebar section headings (native st.subheader → stHeading) */
+        section[data-testid="stSidebar"] [data-testid="stHeading"] {
+            margin: 1.15rem 0 0.65rem 0;
+            padding: 1rem 0 0 0;
+            border-top: 1px solid var(--dt-sidebar-border);
+        }
+        section[data-testid="stSidebar"] [data-testid="stHeading"] h3 {
+            font-size: 0.92rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            color: #e8e8e8;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Sidebar form controls */
+        section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--dt-sidebar-muted);
+            margin-bottom: var(--dt-sidebar-control-gap);
+        }
+        section[data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div {
+            border-radius: 8px;
+            font-size: 0.88rem;
+        }
+        section[data-testid="stSidebar"] .stButton > button {
+            font-size: 0.84rem;
+            padding: 0.5rem 0.75rem;
+            min-height: 2.25rem;
+            line-height: 1.35;
+        }
+        section[data-testid="stSidebar"] .stDownloadButton > button {
+            font-size: 0.84rem;
+            padding: 0.5rem 0.75rem;
+            min-height: 2.25rem;
+        }
+        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+            font-size: 0.75rem;
+            opacity: 0.65;
+            margin-top: 0.15rem;
+        }
+
+        /* ── Sidebar header block (brand + status) ── */
+        .dt-sidebar-top {
+            margin: 1rem 0 0;
+        }
+        .dt-sidebar-brand-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .dt-sidebar-brand-icon {
+            font-size: 2rem;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .dt-sidebar-brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .dt-sidebar-brand-title {
+            font-size: 1.45rem;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+            line-height: 1.15;
+            color: #fafafa;
+        }
+        .dt-sidebar-brand-tagline {
+            font-size: 0.78rem;
+            color: var(--dt-sidebar-muted);
+            line-height: 1.3;
+        }
+
+        /* Connection status pill */
+        .dt-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            margin: 0;
+        }
+        .dt-status .dt-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .dt-status-label {
+            flex: 1;
+            font-weight: 500;
+        }
+        .dt-status-badge {
+            font-size: 0.68rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--dt-sidebar-muted);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            white-space: nowrap;
+        }
+        .dt-status-hint {
+            font-size: 0.78rem;
+            color: var(--dt-sidebar-muted);
+            margin: 8px 0 0;
+            line-height: 1.4;
+        }
+        .dt-status.connected {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.28);
+        }
+        .dt-status.connected .dt-dot { background: #4caf50; box-shadow: 0 0 6px rgba(76,175,80,0.5); }
+        .dt-status.connected .dt-status-label { color: #6fcf7a; }
+        .dt-status.offline {
+            background: rgba(220, 53, 69, 0.1);
+            border: 1px solid rgba(220, 53, 69, 0.28);
+        }
+        .dt-status.offline .dt-dot { background: #dc3545; }
+        .dt-status.offline .dt-status-label { color: #f08080; }
+
+        /* Divider before footer actions */
+        .dt-sidebar-divider {
+            margin: 0.85rem 0 0.35rem;
+            border-top: 1px solid var(--dt-sidebar-border);
+        }
+
+        /* Footer: fixed to bottom of viewport */
+        [data-testid="stMarkdown"]:has(.dt-footer) {
+            height: 0;
+            margin: 0;
+            padding: 0;
+            overflow: visible;
+        }
+        .dt-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 999;
+            margin: 0;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 0.45rem 1.5rem 0.45rem 1rem;
+            border-top: 1px solid rgba(150, 150, 150, 0.2);
+            background-color: var(--background-color, #0e1117);
+            font-size: 0.72rem;
+            line-height: 1.3;
+            color: rgba(250, 250, 250, 0.55);
+            box-sizing: border-box;
+        }
+
+        /* Keep chat input above the footer bar */
+        [data-testid="stBottomBlockContainer"] {
+            padding-bottom: 2rem;
+        }
+
+        /* Welcome banner */
+        .dt-welcome {
+            border: 1px solid rgba(26,62,92,0.4);
+            border-left: 3px solid var(--dt-navy);
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin: 8px 0 20px;
+            background: rgba(26,62,92,0.08);
+        }
+        .dt-welcome h3 { margin: 0 0 10px; font-size: 1.3rem; }
+        .dt-welcome p { font-size: 0.9rem; opacity: 0.8; line-height: 1.7; margin: 0; }
+        .dt-welcome .dt-pills { margin-top: 14px; display: flex; gap: 16px; font-size: 0.8rem; opacity: 0.6; flex-wrap: wrap; }
         </style>
         """,
         unsafe_allow_html=True
     )
 
 
-def _render_footer():
-    """Footer banner with attribution."""
+def _render_welcome_banner():
+    """Show a welcome card on first load (no chat history yet)."""
+    if st.session_state.chat_history:
+        return
     st.markdown(
         """
-        <div style='
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background-color: var(--background-color);
-            text-align: right;
-            padding: 5px 15px;
-            border-top: 1px solid var(--secondary-background-color);
-            z-index: 999;
-            font-size: 0.75em;
-            opacity: 0.8;
-        '>
-        Developed by tpravinos | Built with ❤️ using Streamlit and LM Studio
+        <div class="dt-welcome">
+          <h3>👋 Welcome to DevTutor AI</h3>
+          <p>
+            Your private, local AI coding tutor — no data ever leaves your machine.<br>
+            Pick a language in the sidebar, then ask anything below, or explore
+            <strong>Learn Concepts</strong> and <strong>Practice</strong> in the tabs above.
+          </p>
+          <div class="dt-pills">
+            <span>💬 Ask questions</span>
+            <span>📖 Learn concepts</span>
+            <span>🏋️ Practice exercises</span>
+          </div>
         </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def _render_footer():
+    """Footer banner fixed to the bottom of the viewport."""
+    st.markdown(
+        """
+        <div class="dt-footer">DevTutor AI · Built by Thomas Pravinos · Powered by Streamlit &amp; LM Studio</div>
         """,
         unsafe_allow_html=True
     )
@@ -1113,35 +1223,8 @@ def main():
         st.error("Please ensure LM Studio is running with models loaded.")
         st.stop()
     
-    # Modern tab navigation using clickable buttons
-    tab_options = [
-        {"key": "chat", "label": "💬 Chat", "icon": "💬"},
-        {"key": "concepts", "label": "📖 Learn Concepts", "icon": "📖"}, 
-        {"key": "practice", "label": "🏋️ Practice", "icon": "🏋️"}
-    ]
-    
-    # Map session state to tab keys
-    tab_key_mapping = {
-        "💬 Chat": "chat",
-        "📖 Learn Concepts": "concepts", 
-        "🏋️ Practice": "practice"
-    }
-    
-    current_tab_key = tab_key_mapping.get(st.session_state.active_tab, "chat")
-    
-    # Create modern tab navigation
-    _render_modern_tabs(tab_options, current_tab_key)
-    
-    # Add some spacing
-    st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
-    
-    # Render content based on selected tab
-    if st.session_state.active_tab == "💬 Chat":
-        render_chat_interface()
-    elif st.session_state.active_tab == "📖 Learn Concepts":
-        render_concept_explainer()
-    elif st.session_state.active_tab == "🏋️ Practice":
-        render_exercise_generator()
+    # Create native tab navigation with content inside each tab
+    _render_modern_tabs()
     
     # Render footer
     _render_footer()
