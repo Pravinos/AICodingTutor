@@ -2,7 +2,9 @@
 
 A local AI-powered coding tutor that helps beginners learn programming fundamentals. Built with Streamlit and powered by LM Studio for completely private, local AI inference.
 
-<img src="media/app.png"/>
+<img src="media/app.png" alt="Chat interface with Python selected"/>
+
+*Chat interface with Python selected*
 
 ## ✨ What This App Offers
 
@@ -42,8 +44,10 @@ Q4_K_M**)
 2. **Create virtual environment**:
    ```bash
    python -m venv venv
-   venv\Scripts\activate  # Windows
    ```
+   Activate it:
+   - **Windows**: `venv\Scripts\activate`
+   - **macOS / Linux**: `source venv/bin/activate`
 3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
@@ -93,7 +97,7 @@ generation_settings:
   timeout: 60
 ```
 
-## �️ Troubleshooting
+## 🔧 Troubleshooting
 
 ### LM Studio Issues
 - **Connection Failed**: Ensure LM Studio is running with a model loaded
@@ -104,14 +108,8 @@ generation_settings:
 - **Import Errors**: Activate virtual environment and install requirements
 - **Port Conflicts**: LM Studio uses port 1234, Streamlit uses 8501
 
-## License
-This project is provided for portfolio and demonstration purposes only.
-
-All rights are reserved.
-You may view the source code, but you are not permitted to copy, modify, reuse, or distribute any part of it without explicit permission from the author.
-
-For licensing inquiries, contact tpravinos99@gmail.com.
-
 ## Contact
-Built by Thomas Pravinos.
-Contact: tpravinos99@gmail.com or [GitHub](https://github.com/Pravinos).
+
+Built by Thomas Pravinos — tpravinos99@gmail.com or [GitHub](https://github.com/Pravinos).
+
+Licensed under the [MIT License](LICENSE).
